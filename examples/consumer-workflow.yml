@@ -50,8 +50,3 @@ jobs:
       install: none
       enable-harden-runner: true
       enable-campaign-ioc: true
-
-  # Example: only run SpecTackler (or other heavy jobs) after supply-chain is green.
-  # spectackler:
-  #   needs: supply-chain
-  #   uses: dbarrett24/spectackler-ci/.github/workflows/...@SHA

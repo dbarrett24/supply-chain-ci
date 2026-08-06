@@ -12,10 +12,10 @@ lockfile evidence first**, and only optionally install afterward with scripts di
 
 ## Lockfiles are the contract
 
-| Idea | Plain English |
+| Idea | Meaning |
 | --- | --- |
-| Lockfile | The exact map of packages + versions your project resolves to (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`). |
-| Commit the lockfile | CI and other machines install the **same** tree. Without it, “works on my laptop” is a security risk. |
+| Lockfile | Exact package + version map (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`). |
+| Commit the lockfile | CI and other machines install the **same** tree. |
 | `npm ci` / frozen install | Install **exactly** what the lockfile says. Prefer this in CI over `npm install`, which can rewrite the lockfile. |
 
 Never rely on CI inventing a lockfile with `npm install`. Commit lockfiles; scan them; then install from them.
@@ -72,6 +72,5 @@ That is enough to check out the consumer repository and read lockfiles. We do **
 
 ## What this is not
 
-- Not an LLM PR reviewer ([spectackler-ci](https://github.com/dbarrett24/spectackler-ci)).
 - Not endpoint remediation ([only-cliches/shai-hulud-remediation](https://github.com/only-cliches/shai-hulud-remediation)) — see [remediation.md](./remediation.md).
 - Not a replacement for your repo’s test/build workflows.

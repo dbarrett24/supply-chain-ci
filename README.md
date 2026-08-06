@@ -1,32 +1,33 @@
 # supply-chain-ci
 
-**Reusable GitHub Actions product** that fails your build when npm/pnpm/yarn lockfiles look unsafe.
+Reusable GitHub Actions workflow that fails the build when npm / pnpm / yarn lockfiles look unsafe.
 
-It is a **CI detection gate**, not a laptop cleanup tool, and not an AI code review bot.
+**Not an npm package.** You do not `npm install` this. Consumers call it from a workflow:
 
-| This repo | Sibling repos (different jobs) |
-| --- | --- |
-| **supply-chain-ci** — dependency safety in CI | **[spectackler-ci](https://github.com/dbarrett24/spectackler-ci)** — LLM PR review personas |
-| | **[personal-dev-configs](https://github.com/dbarrett24/personal-dev-configs)** — evolve-ui monorepo that *calls* this action |
-| | **[only-cliches/shai-hulud-remediation](https://github.com/only-cliches/shai-hulud-remediation)** — optional **endpoint** cleanup after an incident |
+```yaml
+jobs:
+  supply-chain:
+    uses: dbarrett24/supply-chain-ci/.github/workflows/npm-supply-chain.yml@<COMMIT_SHA>
+```
 
-## Why it exists (plain English)
+It is a CI detection gate (scan lockfiles, fail the job). It does not remediate developer machines.
 
-In August 2026, npm worms in the Shai-Hulud / ChainDrop class abused packages such as
-`keyv` / `cacheable` / `flat-cache`. They often run via **`preinstall` scripts**.
+## Why
 
-`npm audit` alone is slow and incomplete for that threat. You want one installable workflow you
-can pin by **commit SHA** and drop into many personal repos:
+Lifecycle-script worms (e.g. Shai-Hulud / ChainDrop-class campaigns hitting `keyv` / `cacheable` /
+`flat-cache`) can run during `preinstall`. Scanning after a normal install is too late.
 
-1. Read the lockfile **before** running install scripts  
-2. Fail the job if known-bad versions, malware advisories, or high/critical vulns show up  
-3. Optionally install with `--ignore-scripts` only after scans pass  
+This workflow:
 
-## Quick start (about 5 minutes)
+1. Scans lockfiles **before** any install that runs lifecycle scripts
+2. Fails on curated campaign IOCs, OSV findings, and/or `audit-ci` at a chosen severity
+3. Optionally installs afterward with `--ignore-scripts`
 
-### 1. Add a tiny workflow to your repo
+## Quick start
 
-Create `.github/workflows/supply-chain.yml`:
+### 1. Add a workflow
+
+Create `.github/workflows/supply-chain.yml` (or copy [`examples/consumer-workflow.yml`](./examples/consumer-workflow.yml)):
 
 ```yaml
 name: supply-chain
@@ -55,30 +56,25 @@ jobs:
       install: none
 ```
 
-Copy the fuller template from [`examples/consumer-workflow.yml`](./examples/consumer-workflow.yml).
+### 2. Pin a commit SHA
 
-### 2. Pin a commit SHA (required)
-
-Do **not** use `@main`.
-
-1. Open the [releases](https://github.com/dbarrett24/supply-chain-ci/releases) page (or tags).  
-2. Find **`v0.1.0`**.  
-3. Copy that tag’s **full commit SHA**.  
-4. Replace `PIN_ME_TO_COMMIT_SHA` with it. Keep `# v0.1.0` as a comment.
+Do not use `@main`. Resolve the release tag once and pin the full SHA:
 
 ```bash
-# After this repo is tagged locally/remotely:
-git rev-parse v0.1.0
+git ls-remote --tags https://github.com/dbarrett24/supply-chain-ci.git v0.1.0
+# or locally: git rev-parse v0.1.0^{commit}
 ```
 
-### 3. Commit your lockfile
+**v0.1.0 commit:** `6de5ab9dfbc962f6db0b7339a57c2a5aa10562fc`
 
-CI must see `package-lock.json`, `pnpm-lock.yaml`, or `yarn.lock`. Do not let CI invent one with
-a floating `npm install`.
+### 3. Commit lockfiles
 
-### 4. Add Dependabot
+Ship `package-lock.json`, `pnpm-lock.yaml`, or `yarn.lock`. Do not let CI invent one with a floating
+`npm install`.
 
-Track both npm deps and Actions pins (including this workflow’s SHA):
+### 4. Dependabot
+
+Track npm deps and Action pins (including this workflow’s SHA):
 
 ```yaml
 # .github/dependabot.yml
@@ -94,38 +90,21 @@ updates:
       interval: weekly
 ```
 
-### 5. If you also use SpecTackler
+### 5. After a suspected compromise
 
-Make the review job wait on this gate:
+Rotate tokens. Optionally run endpoint remediation on the laptop (see
+[`docs/remediation.md`](./docs/remediation.md)). Fix lockfiles, reinstall clean, re-run this gate.
 
-```yaml
-spectackler:
-  needs: supply-chain
-  # ...
-```
+## Workflow behavior
 
-### 6. After a suspected compromise
+1. Checkout consumer repo  
+2. Optional Harden-Runner (egress audit)  
+3. Setup Node (cache keyed on lockfiles)  
+4. Lockfile scans before scripted installs: campaign IOCs → OSV → `audit-ci`  
+5. Optional install (`none` / `ci-ignore-scripts` / `ci`)  
+6. Job summary with per-lockfile results  
 
-Rotate tokens first. Optionally run endpoint remediation on the **laptop**. Fix lockfiles. Reinstall
-clean. Details: [`docs/remediation.md`](./docs/remediation.md).
-
-## What the reusable workflow does
-
-Order matters:
-
-1. **Checkout** the consumer repo (SHA-pinned `actions/checkout`)  
-2. **Optional Harden-Runner** (egress audit mode)  
-3. **Setup Node** with cache keyed on lockfiles  
-4. **Lockfile-only scans before scripted installs**
-   - Curated **campaign IOC** check (known-bad package versions + filenames such as
-     `Math_Symbol.js`, `math_init.js`, `setup.mjs`, `bun-dl-*`)
-   - **Google OSV Scanner** on each lockfile  
-   - **`audit-ci`** at `high` or `critical` (skipped as a gate when `fail-on: malware`)  
-5. **Optional install**: `none` (default for many consumers) or
-   `npm ci --ignore-scripts` / `pnpm install --frozen-lockfile --ignore-scripts`  
-6. **Job summary** with pass/fail per lockfile  
-
-Permissions: **`contents: read` only**. No Codacy requirement. No SARIF upload by default.
+Permissions: `contents: read` only.
 
 ### Inputs
 
@@ -140,82 +119,46 @@ Permissions: **`contents: read` only**. No Codacy requirement. No SARIF upload b
 | `enable-campaign-ioc` | `true` | Curated IOC scan |
 | `working-directory` | `.` | Monorepo subdirectory |
 
-## Explicit non-goals
+## Non-goals
 
-- No LLM / SpecTackler review  
-- No deleting `node_modules` on developer machines from CI  
-- No Codacy requirement  
-- No replacing repo-specific CI (tests, build, Storybook) in personal-dev-configs  
-- No `curl | bash` remote remediations  
-
-## Ecosystem map
-
-| Repo | Role |
-| --- | --- |
-| `spectackler-ci` | PR personas / LLM review |
-| **`supply-chain-ci` (this)** | Dependency safety gate |
-| `personal-dev-configs` | Keep `pnpm security:validate` + evolve-ui `ci.yml`; call this workflow instead of one-off Shai-Hulud YAML |
-| `stream-deck-plugins` | Simple first npm consumer (`plugins/*/package-lock.json`) |
+- LLM / PR review bots  
+- Deleting `node_modules` on developer machines from CI  
+- Codacy (or any SaaS) as a hard dependency  
+- Replacing a repo’s own test/build workflows  
+- `curl | bash` remote remediations  
 
 ## Docs
 
 - [Concepts](./docs/concepts.md) — lockfiles, scripts, `fail-on`, permissions  
-- [Remediation](./docs/remediation.md) — when to use only-cliches cleanup + token rotation  
-- [Consumer checklist](./docs/consumer-checklist.md) — per-repo steps  
+- [Remediation](./docs/remediation.md) — optional endpoint cleanup + token rotation  
+- [Consumer checklist](./docs/consumer-checklist.md)  
 - [Example workflow](./examples/consumer-workflow.yml)  
 
 ## Local dry-run
 
-### Campaign IOC script (no Actions required)
-
 ```bash
 # Should PASS
-node scripts/campaign-ioc-scan.mjs \
-  --root . \
-  --lockfile fixtures/clean/package-lock.json
+node scripts/campaign-ioc-scan.mjs --root . --lockfile fixtures/clean/package-lock.json
 
 # Should FAIL (exit 1)
-node scripts/campaign-ioc-scan.mjs \
-  --root . \
-  --lockfile fixtures/known-bad/package-lock.json
+node scripts/campaign-ioc-scan.mjs --root . --lockfile fixtures/known-bad/package-lock.json
 ```
 
-### Optional: `act`
+Optional: `act -W .github/workflows/self-test.yml -j clean-fixture`
 
-If you use [nektos/act](https://github.com/nektos/act):
+## Self-test
 
-```bash
-act -W .github/workflows/self-test.yml -j clean-fixture
-```
-
-Reusable `workflow_call` jobs are awkward under `act`; prefer the composite self-test jobs or push
-to GitHub and watch **self-test**.
-
-## Development / self-test
-
-This repo’s `.github/workflows/self-test.yml`:
-
-- Scans `fixtures/clean` and expects **pass**  
-- Scans `fixtures/known-bad` and expects **IOC fail**  
-- Smoke-calls the reusable workflow against the clean fixture  
-
-`fixtures/known-bad` lists `keyv@6.0.0` and IOC filenames **on purpose**. **Do not**
-`npm install` that fixture — it exists for lockfile/filename detection only.
+`.github/workflows/self-test.yml` scans `fixtures/clean` (expect pass) and `fixtures/known-bad`
+(expect IOC fail). Do not `npm install` the known-bad fixture.
 
 ## Versioning
 
-- Tag: **`v0.1.0`** (annotated tag exists locally)
-- **Pin this release’s SHA** (commit the tag points at):
+| Item | Value |
+| --- | --- |
+| Tag | `v0.1.0` |
+| Pin SHA | `6de5ab9dfbc962f6db0b7339a57c2a5aa10562fc` |
 
-  `6de5ab9dfbc962f6db0b7339a57c2a5aa10562fc`
-
-  ```bash
-  git rev-parse v0.1.0^{commit}
-  ```
-
-- After the first push: `git push -u origin main && git push origin v0.1.0`
-- Consumers: pin that **commit SHA** (not `@main`, not a moving tag alone)
-- Dependabot on `github-actions` keeps pins fresh
+Consumers pin the **commit SHA**. Dependabot on `github-actions` keeps pins fresh.
 
 ## License
 
