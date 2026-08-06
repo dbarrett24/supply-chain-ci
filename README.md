@@ -204,9 +204,18 @@ This repo’s `.github/workflows/self-test.yml`:
 
 ## Versioning
 
-- Tag: **`v0.1.0`**  
-- Consumers: pin that tag’s **commit SHA**  
-- Dependabot on `github-actions` keeps pins fresh  
+- Tag: **`v0.1.0`** (annotated tag exists locally)
+- **Pin this release’s SHA** (commit the tag points at):
+
+  `6de5ab9dfbc962f6db0b7339a57c2a5aa10562fc`
+
+  ```bash
+  git rev-parse v0.1.0^{commit}
+  ```
+
+- After the first push: `git push -u origin main && git push origin v0.1.0`
+- Consumers: pin that **commit SHA** (not `@main`, not a moving tag alone)
+- Dependabot on `github-actions` keeps pins fresh
 
 ## License
 
