@@ -1,0 +1,57 @@
+# Drop-in consumer workflow
+#
+# 1. Copy this file to: .github/workflows/supply-chain.yml
+# 2. Replace PIN_ME_TO_COMMIT_SHA with the full commit SHA of dbarrett24/supply-chain-ci
+#    (prefer the SHA for tag v0.1.0 — see README “Pin this release’s SHA”).
+# 3. Adjust lockfile-paths for your repo.
+# 4. Commit. Open a PR and confirm the check runs.
+#
+# Do NOT use @main — tags move; SHAs do not.
+
+name: supply-chain
+
+on:
+  pull_request:
+    paths:
+      - "**/package-lock.json"
+      - "**/pnpm-lock.yaml"
+      - "**/yarn.lock"
+      - "**/package.json"
+      - ".github/workflows/supply-chain.yml"
+  push:
+    branches: [main, master]
+    paths:
+      - "**/package-lock.json"
+      - "**/pnpm-lock.yaml"
+      - "**/yarn.lock"
+      - "**/package.json"
+      - ".github/workflows/supply-chain.yml"
+  schedule:
+    # Weekly visibility even when lockfiles did not change in a PR
+    - cron: "17 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  supply-chain:
+    permissions:
+      contents: read
+    uses: dbarrett24/supply-chain-ci/.github/workflows/npm-supply-chain.yml@PIN_ME_TO_COMMIT_SHA # v0.1.0
+    with:
+      package-manager: auto
+      lockfile-paths: |
+        **/package-lock.json
+        **/pnpm-lock.yaml
+        **/yarn.lock
+      node-version: "22"
+      fail-on: high
+      install: none
+      enable-harden-runner: true
+      enable-campaign-ioc: true
+
+  # Example: only run SpecTackler (or other heavy jobs) after supply-chain is green.
+  # spectackler:
+  #   needs: supply-chain
+  #   uses: dbarrett24/spectackler-ci/.github/workflows/...@SHA

@@ -1,0 +1,9 @@
+{
+  "name": "supply-chain-ci-fixture-clean",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal clean lockfile for self-tests (no known campaign IOCs).",
+  "dependencies": {
+    "ms": "2.1.3"
+  }
+}

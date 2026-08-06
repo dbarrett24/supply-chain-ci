@@ -1,0 +1,26 @@
+{
+  "$schema_comment": "Curated campaign IOCs for CI detection only. Inspired by Wiz/Aikido Shai-Hulud Aug 2026 reporting and only-cliches/shai-hulud-remediation indicators. Not a full Wiz CSV mirror — refresh intentionally.",
+  "campaign": "shai-hulud-aug-2026",
+  "source_notes": [
+    "https://www.wiz.io/blog/keyv-and-cacheable-npm-supply-chain-attack",
+    "https://raw.githubusercontent.com/wiz-sec-public/wiz-research-iocs/refs/heads/main/reports/keyv-packages.csv",
+    "https://github.com/only-cliches/shai-hulud-remediation"
+  ],
+  "packages": {
+    "keyv": ["5.0.0", "6.0.0"],
+    "flat-cache": ["6.1.24"],
+    "cacheable": ["2.5.1"],
+    "cacheable-request": ["13.0.20"],
+    "@cacheable/memory": ["2.2.1"],
+    "@cacheable/net": ["2.1.1"],
+    "@cacheable/node-cache": ["3.1.2"],
+    "@cacheable/utils": ["2.5.1"]
+  },
+  "filename_patterns": [
+    "Math_Symbol.js",
+    "math_init.js",
+    "setup.mjs",
+    "bun-dl-*"
+  ],
+  "refresh_hint": "Compare against the Wiz keyv-packages.csv and expand packages/versions when a new campaign wave lands. Prefer committing curated entries over curl|bash of remote remediations."
+}

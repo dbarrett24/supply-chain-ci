@@ -1,0 +1,15 @@
+{
+  "name": "supply-chain-ci",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reusable GitHub Actions product for npm/pnpm/yarn supply-chain CI gates",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test:ioc:clean": "node scripts/campaign-ioc-scan.mjs --root . --lockfile fixtures/clean/package-lock.json",
+    "test:ioc:bad": "node scripts/campaign-ioc-scan.mjs --root . --lockfile fixtures/known-bad/package-lock.json; test $? -eq 1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

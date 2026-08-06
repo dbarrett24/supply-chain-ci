@@ -1,0 +1,9 @@
+{
+  "name": "supply-chain-ci-fixture-known-bad",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Intentionally lists a campaign-IOC package version for CI self-tests. Do not npm install this fixture.",
+  "dependencies": {
+    "keyv": "6.0.0"
+  }
+}

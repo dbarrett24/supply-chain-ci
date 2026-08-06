@@ -1,0 +1,281 @@
+name: "npm-supply-chain"
+description: "Lockfile-first npm/pnpm/yarn supply-chain scans (OSV, audit-ci, campaign IOCs) before optional install."
+author: "dbarrett24"
+
+inputs:
+  package-manager:
+    description: "npm | pnpm | yarn | auto"
+    required: false
+    default: "auto"
+  lockfile-paths:
+    description: "Newline-separated globs for lockfiles"
+    required: false
+    default: |
+      **/package-lock.json
+      **/pnpm-lock.yaml
+      **/yarn.lock
+  node-version:
+    description: "Node.js version"
+    required: false
+    default: "22"
+  fail-on:
+    description: "high | critical | malware — see docs/concepts.md"
+    required: false
+    default: "high"
+  install:
+    description: "none | ci-ignore-scripts | ci"
+    required: false
+    default: "ci-ignore-scripts"
+  enable-campaign-ioc:
+    description: "Run curated Shai-Hulud-class IOC checks"
+    required: false
+    default: "true"
+  working-directory:
+    description: "Optional subdirectory to treat as project root"
+    required: false
+    default: "."
+  action-path:
+    description: "Absolute path to the supply-chain-ci checkout (scripts/config)"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve lockfiles + package manager
+      id: resolve
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        LOCKFILE_PATHS: ${{ inputs.lockfile-paths }}
+        PACKAGE_MANAGER_IN: ${{ inputs.package-manager }}
+        ACTION_PATH: ${{ inputs.action-path }}
+      run: |
+        set -euo pipefail
+        patterns="$(mktemp)"
+        lockfiles="$(mktemp)"
+        printf '%s\n' "${LOCKFILE_PATHS}" > "${patterns}"
+        bash "${ACTION_PATH}/scripts/resolve-lockfiles.sh" "." "${patterns}" | tee "${lockfiles}"
+        pm="$(bash "${ACTION_PATH}/scripts/detect-package-manager.sh" "${PACKAGE_MANAGER_IN}" "${lockfiles}")"
+        {
+          echo "package-manager=${pm}"
+          echo "lockfiles<<EOF"
+          cat "${lockfiles}"
+          echo "EOF"
+          echo "cache-dependency-path<<EOF"
+          cat "${lockfiles}"
+          echo "EOF"
+        } >> "${GITHUB_OUTPUT}"
+        echo "Resolved package manager: ${pm}"
+
+    - name: Setup pnpm
+      if: steps.resolve.outputs.package-manager == 'pnpm'
+      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.0.0
+      with:
+        version: 9
+
+    - name: Setup Node
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: ${{ steps.resolve.outputs.package-manager == 'yarn' && 'yarn' || steps.resolve.outputs.package-manager == 'pnpm' && 'pnpm' || 'npm' }}
+        cache-dependency-path: ${{ steps.resolve.outputs.cache-dependency-path }}
+
+    - name: Install osv-scanner CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v osv-scanner >/dev/null 2>&1; then
+          osv-scanner --version
+          exit 0
+        fi
+        ver="v2.3.8"
+        # Release assets are bare binaries (not tarballs) as of v2.3.8
+        url="https://github.com/google/osv-scanner/releases/download/${ver}/osv-scanner_linux_amd64"
+        curl -fsSL -o /tmp/osv-scanner "${url}"
+        sudo install -m 0755 /tmp/osv-scanner /usr/local/bin/osv-scanner
+        osv-scanner --version
+
+    - name: Campaign IOC scan (before install)
+      if: inputs.enable-campaign-ioc == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACTION_PATH: ${{ inputs.action-path }}
+        LOCKFILES: ${{ steps.resolve.outputs.lockfiles }}
+      run: |
+        set -euo pipefail
+        args=(--root "." --ioc "${ACTION_PATH}/config/campaign-iocs.json")
+        while IFS= read -r lf || [[ -n "${lf}" ]]; do
+          [[ -z "${lf}" ]] && continue
+          args+=(--lockfile "${lf}")
+        done <<< "${LOCKFILES}"
+        node "${ACTION_PATH}/scripts/campaign-ioc-scan.mjs" "${args[@]}"
+
+    - name: OSV Scanner (per lockfile)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FAIL_ON: ${{ inputs.fail-on }}
+        LOCKFILES: ${{ steps.resolve.outputs.lockfiles }}
+      run: |
+        set -euo pipefail
+        osv_failed=0
+        malware_failed=0
+        {
+          echo "## OSV lockfile scan"
+          echo ""
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+        while IFS= read -r lf || [[ -n "${lf}" ]]; do
+          [[ -z "${lf}" ]] && continue
+          echo "::group::OSV scan ${lf}"
+          json_out="$(mktemp)"
+          set +e
+          osv-scanner scan --lockfile="${lf}" --format=json --output-file="${json_out}"
+          rc=$?
+          set -e
+          # Also print human-readable for logs
+          osv-scanner scan --lockfile="${lf}" --format=table || true
+          echo "::endgroup::"
+
+          if [[ "${rc}" -eq 0 ]]; then
+            echo "- \`${lf}\`: PASS" >> "${GITHUB_STEP_SUMMARY}"
+            continue
+          fi
+
+          if [[ "${FAIL_ON}" == "malware" ]]; then
+            mal_hits=0
+            if command -v jq >/dev/null 2>&1 && [[ -s "${json_out}" ]]; then
+              mal_hits="$(jq '[.. | objects | .id? // empty | select(startswith("MAL"))] | length' "${json_out}" 2>/dev/null || echo 0)"
+            fi
+            if [[ "${mal_hits}" != "0" ]]; then
+              malware_failed=1
+              echo "- \`${lf}\`: FAIL (MAL advisories=${mal_hits})" >> "${GITHUB_STEP_SUMMARY}"
+            else
+              echo "- \`${lf}\`: WARN (vulns present; fail-on=malware ignores non-MAL, osv exit ${rc})" >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          else
+            osv_failed=1
+            echo "- \`${lf}\`: FAIL (OSV findings, exit ${rc})" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+        done <<< "${LOCKFILES}"
+
+        echo "" >> "${GITHUB_STEP_SUMMARY}"
+
+        if [[ "${FAIL_ON}" == "malware" ]]; then
+          [[ "${malware_failed}" -eq 0 ]] || exit 1
+        else
+          [[ "${osv_failed}" -eq 0 ]] || exit 1
+        fi
+
+    - name: audit-ci
+      if: inputs.fail-on != 'malware'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        FAIL_ON: ${{ inputs.fail-on }}
+        PM: ${{ steps.resolve.outputs.package-manager }}
+        LOCKFILES: ${{ steps.resolve.outputs.lockfiles }}
+      run: |
+        set -euo pipefail
+        threshold="${FAIL_ON}"
+        case "${threshold}" in
+          high|critical) ;;
+          *) threshold="high" ;;
+        esac
+
+        {
+          echo "## audit-ci (threshold=${threshold})"
+          echo ""
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+        failed=0
+        while IFS= read -r lf || [[ -n "${lf}" ]]; do
+          [[ -z "${lf}" ]] && continue
+          dir="$(dirname "${lf}")"
+          echo "::group::audit-ci (${PM}) in ${dir} for ${lf}"
+          set +e
+          (
+            cd "${dir}"
+            case "${PM}" in
+              pnpm)
+                npx --yes audit-ci@"^7" --package-manager pnpm --severity-threshold "${threshold}"
+                ;;
+              yarn)
+                npx --yes audit-ci@"^7" --package-manager yarn --severity-threshold "${threshold}"
+                ;;
+              *)
+                npx --yes audit-ci@"^7" --package-manager npm --severity-threshold "${threshold}"
+                ;;
+            esac
+          )
+          rc=$?
+          set -e
+          echo "::endgroup::"
+          if [[ "${rc}" -ne 0 ]]; then
+            echo "- \`${lf}\`: FAIL" >> "${GITHUB_STEP_SUMMARY}"
+            failed=1
+          else
+            echo "- \`${lf}\`: PASS" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+        done <<< "${LOCKFILES}"
+
+        echo "" >> "${GITHUB_STEP_SUMMARY}"
+        [[ "${failed}" -eq 0 ]] || exit 1
+
+    - name: Optional install (after scans)
+      if: inputs.install != 'none'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PM: ${{ steps.resolve.outputs.package-manager }}
+        INSTALL_MODE: ${{ inputs.install }}
+      run: |
+        set -euo pipefail
+        case "${PM}" in
+          pnpm)
+            if [[ "${INSTALL_MODE}" == "ci-ignore-scripts" ]]; then
+              pnpm install --frozen-lockfile --ignore-scripts
+            else
+              pnpm install --frozen-lockfile
+            fi
+            ;;
+          yarn)
+            if [[ "${INSTALL_MODE}" == "ci-ignore-scripts" ]]; then
+              yarn install --frozen-lockfile --ignore-scripts
+            else
+              yarn install --frozen-lockfile
+            fi
+            ;;
+          *)
+            if [[ "${INSTALL_MODE}" == "ci-ignore-scripts" ]]; then
+              npm ci --ignore-scripts
+            else
+              npm ci
+            fi
+            ;;
+        esac
+
+    - name: Job summary footer
+      if: always()
+      shell: bash
+      env:
+        FAIL_ON: ${{ inputs.fail-on }}
+        INSTALL_MODE: ${{ inputs.install }}
+        PM: ${{ steps.resolve.outputs.package-manager }}
+        LOCKFILES: ${{ steps.resolve.outputs.lockfiles }}
+      run: |
+        {
+          echo "## supply-chain-ci summary"
+          echo ""
+          echo "- Package manager: \`${PM}\`"
+          echo "- fail-on: \`${FAIL_ON}\`"
+          echo "- install: \`${INSTALL_MODE}\`"
+          echo "- lockfiles:"
+          while IFS= read -r lf || [[ -n "${lf}" ]]; do
+            [[ -z "${lf}" ]] && continue
+            echo "  - \`${lf}\`"
+          done <<< "${LOCKFILES}"
+          echo ""
+          echo "Lockfile scans run **before** installs that would execute lifecycle scripts."
+        } >> "${GITHUB_STEP_SUMMARY}"
