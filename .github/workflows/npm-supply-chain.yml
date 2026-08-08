@@ -73,12 +73,11 @@ jobs:
 
       # Tooling lives in this product repo. When the caller is this repo, reuse the
       # consumer checkout (avoids a nested clone). For external consumers, nest a
-      # checkout of *this* repo at the called-workflow ref.
+      # checkout of *this* repo at the called workflow's commit.
       #
-      # Do NOT use github.workflow_sha here — for workflow_call that is the *caller*
-      # workflow file's commit in the consumer repo, so `ref: ${{ github.workflow_sha }}`
-      # fails with "not our ref". Parse github.workflow_ref instead
-      # (`owner/repo/path/to.yml@<sha-or-ref>`).
+      # Use job.workflow_* (not github.workflow_*): under workflow_call, github.*
+      # refers to the *caller*, so github.workflow_sha / parsing GITHUB_WORKFLOW_REF
+      # yield the consumer PR ref and fail with "not our ref" / "couldn't find remote ref".
       - name: Resolve tooling path
         id: tools
         shell: bash
@@ -90,15 +89,14 @@ jobs:
           else
             echo "action-path=${GITHUB_WORKSPACE}/.supply-chain-ci" >> "${GITHUB_OUTPUT}"
             echo "need-checkout=true" >> "${GITHUB_OUTPUT}"
-            echo "tools-ref=${GITHUB_WORKFLOW_REF##*@}" >> "${GITHUB_OUTPUT}"
           fi
 
       - name: Checkout supply-chain-ci tooling
         if: steps.tools.outputs.need-checkout == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: dbarrett24/supply-chain-ci
-          ref: ${{ steps.tools.outputs.tools-ref }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           path: .supply-chain-ci
 
       - name: Run supply-chain scans
