@@ -35,12 +35,30 @@ inputs:
     required: false
     default: "."
   action-path:
-    description: "Absolute path to the supply-chain-ci checkout (scripts/config)"
-    required: true
+    description: "Absolute path to the supply-chain-ci repo root (scripts/config). Optional when this action is referenced remotely — defaults to the action's repository root via github.action_path."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
   steps:
+    - name: Resolve supply-chain-ci root
+      id: root
+      shell: bash
+      env:
+        ACTION_PATH_IN: ${{ inputs.action-path }}
+      run: |
+        set -euo pipefail
+        if [[ -n "${ACTION_PATH_IN}" ]]; then
+          root="${ACTION_PATH_IN}"
+        else
+          # Remote composite: action.yml lives at actions/npm-supply-chain/; repo root is ../..
+          root="$(cd "${{ github.action_path }}/../.." && pwd)"
+        fi
+        echo "action-path=${root}" >> "${GITHUB_OUTPUT}"
+        test -d "${root}/scripts"
+        test -f "${root}/config/campaign-iocs.json"
+
     - name: Resolve lockfiles + package manager
       id: resolve
       shell: bash
@@ -48,7 +66,7 @@ runs:
       env:
         LOCKFILE_PATHS: ${{ inputs.lockfile-paths }}
         PACKAGE_MANAGER_IN: ${{ inputs.package-manager }}
-        ACTION_PATH: ${{ inputs.action-path }}
+        ACTION_PATH: ${{ steps.root.outputs.action-path }}
       run: |
         set -euo pipefail
         patterns="$(mktemp)"
@@ -100,7 +118,7 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        ACTION_PATH: ${{ inputs.action-path }}
+        ACTION_PATH: ${{ steps.root.outputs.action-path }}
         LOCKFILES: ${{ steps.resolve.outputs.lockfiles }}
       run: |
         set -euo pipefail

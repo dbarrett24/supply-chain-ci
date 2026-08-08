@@ -38,7 +38,7 @@ jobs:
   supply-chain:
     permissions:
       contents: read
-    uses: dbarrett24/supply-chain-ci/.github/workflows/npm-supply-chain.yml@PIN_ME_TO_COMMIT_SHA # v0.1.0 — replace with full SHA (see README)
+    uses: dbarrett24/supply-chain-ci/.github/workflows/npm-supply-chain.yml@PIN_ME_TO_COMMIT_SHA # v0.1.1 — replace with full SHA (see README)
     with:
       package-manager: auto
       lockfile-paths: |
