@@ -85,8 +85,11 @@ runs:
         } >> "${GITHUB_OUTPUT}"
         echo "Resolved package manager: ${pm}"
 
+    # Scan-only (install=none) does not need pnpm installed. pnpm/action-setup
+    # fails with "No pnpm version is specified" when package.json lacks
+    # "packageManager" — common for lockfile-only / monorepo subdirectory consumers.
     - name: Setup pnpm
-      if: steps.resolve.outputs.package-manager == 'pnpm'
+      if: steps.resolve.outputs.package-manager == 'pnpm' && inputs.install != 'none'
       uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.0.0
       # Do not pass `version` — let package.json "packageManager" win. A hardcoded
       # version (e.g. 9) conflicts with consumers on pnpm 10+ and fails the setup.
