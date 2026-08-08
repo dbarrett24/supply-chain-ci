@@ -65,7 +65,9 @@ git ls-remote --tags https://github.com/dbarrett24/supply-chain-ci.git v0.1.0
 # or locally: git rev-parse v0.1.0^{commit}
 ```
 
-**v0.1.0 commit:** `6de5ab9dfbc962f6db0b7339a57c2a5aa10562fc`
+**v0.1.1 commit:** _(set after tag)_ — prefer `git rev-parse v0.1.1^{commit}`
+
+**v0.1.0 commit (buggy tooling checkout):** `6de5ab9dfbc962f6db0b7339a57c2a5aa10562fc` — do not use for new consumers
 
 ### 3. Commit lockfiles
 
@@ -155,8 +157,8 @@ Optional: `act -W .github/workflows/self-test.yml -j clean-fixture`
 
 | Item | Value |
 | --- | --- |
-| Tag | `v0.1.0` |
-| Pin SHA | `6de5ab9dfbc962f6db0b7339a57c2a5aa10562fc` |
+| Tag | `v0.1.1` |
+| Pin SHA | see `git rev-parse v0.1.1^{commit}` after release |
 
 Consumers pin the **commit SHA**. Dependabot on `github-actions` keeps pins fresh.
 

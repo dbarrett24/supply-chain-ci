@@ -59,51 +59,23 @@ jobs:
     name: npm supply-chain
     runs-on: ubuntu-latest
     steps:
-      # 1) Consumer sources (lockfiles under test)
       - name: Checkout consumer repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # 2) Optional Harden-Runner (egress awareness). Placed after checkout per product contract;
-      #    StepSecurity docs prefer it first — acceptable for audit-mode visibility.
       - name: Harden Runner
         if: ${{ inputs.enable-harden-runner }}
         uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
-      # Tooling lives in this product repo. When the caller is this repo, reuse the
-      # consumer checkout (avoids a nested clone). For external consumers, nest a
-      # checkout of *this* repo at the called workflow's commit.
-      #
-      # Use job.workflow_* (not github.workflow_*): under workflow_call, github.*
-      # refers to the *caller*, so github.workflow_sha / parsing GITHUB_WORKFLOW_REF
-      # yield the consumer PR ref and fail with "not our ref" / "couldn't find remote ref".
-      - name: Resolve tooling path
-        id: tools
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "${GITHUB_REPOSITORY}" == "dbarrett24/supply-chain-ci" ]]; then
-            echo "action-path=${GITHUB_WORKSPACE}" >> "${GITHUB_OUTPUT}"
-            echo "need-checkout=false" >> "${GITHUB_OUTPUT}"
-          else
-            echo "action-path=${GITHUB_WORKSPACE}/.supply-chain-ci" >> "${GITHUB_OUTPUT}"
-            echo "need-checkout=true" >> "${GITHUB_OUTPUT}"
-          fi
-
-      - name: Checkout supply-chain-ci tooling
-        if: steps.tools.outputs.need-checkout == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
-          path: .supply-chain-ci
-
+      # External callers: invoke the composite action remotely. Do NOT nest-checkout this
+      # repo via github.workflow_sha / job.workflow_sha — under workflow_call those resolve
+      # to the *caller* SHA and fail with "not our ref". Keep the action pin on the same
+      # release tag as this workflow (v0.1.1).
       - name: Run supply-chain scans
-        uses: ./.supply-chain-ci/actions/npm-supply-chain
-        if: steps.tools.outputs.need-checkout == 'true'
+        if: github.repository != 'dbarrett24/supply-chain-ci'
+        uses: dbarrett24/supply-chain-ci/actions/npm-supply-chain@v0.1.1
         with:
-          action-path: ${{ steps.tools.outputs.action-path }}
           package-manager: ${{ inputs.package-manager }}
           lockfile-paths: ${{ inputs.lockfile-paths }}
           node-version: ${{ inputs.node-version }}
@@ -112,11 +84,12 @@ jobs:
           enable-campaign-ioc: ${{ inputs.enable-campaign-ioc && 'true' || 'false' }}
           working-directory: ${{ inputs.working-directory }}
 
+      # In-repo self-test / dogfood: use the local composite + workspace root.
       - name: Run supply-chain scans (in-repo)
+        if: github.repository == 'dbarrett24/supply-chain-ci'
         uses: ./actions/npm-supply-chain
-        if: steps.tools.outputs.need-checkout == 'false'
         with:
-          action-path: ${{ steps.tools.outputs.action-path }}
+          action-path: ${{ github.workspace }}
           package-manager: ${{ inputs.package-manager }}
           lockfile-paths: ${{ inputs.lockfile-paths }}
           node-version: ${{ inputs.node-version }}
