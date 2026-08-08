@@ -91,11 +91,14 @@ runs:
       # Do not pass `version` — let package.json "packageManager" win. A hardcoded
       # version (e.g. 9) conflicts with consumers on pnpm 10+ and fails the setup.
 
+    # Skip dependency caching when install=none: setup-node's post step fails with
+    # "Path(s) specified in the action for caching do(es) not exist" because no
+    # store/node_modules was created (scan-only mode).
     - name: Setup Node
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: ${{ inputs.node-version }}
-        cache: ${{ steps.resolve.outputs.package-manager == 'yarn' && 'yarn' || steps.resolve.outputs.package-manager == 'pnpm' && 'pnpm' || 'npm' }}
+        cache: ${{ inputs.install != 'none' && (steps.resolve.outputs.package-manager == 'yarn' && 'yarn' || steps.resolve.outputs.package-manager == 'pnpm' && 'pnpm' || 'npm') || '' }}
         cache-dependency-path: ${{ steps.resolve.outputs.cache-dependency-path }}
 
     - name: Install osv-scanner CLI

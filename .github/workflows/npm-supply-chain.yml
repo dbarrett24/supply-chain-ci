@@ -74,7 +74,7 @@ jobs:
       # release tag as this workflow (v0.1.1).
       - name: Run supply-chain scans
         if: github.repository != 'dbarrett24/supply-chain-ci'
-        uses: dbarrett24/supply-chain-ci/actions/npm-supply-chain@v0.1.1
+        uses: dbarrett24/supply-chain-ci/actions/npm-supply-chain@v0.1.2
         with:
           package-manager: ${{ inputs.package-manager }}
           lockfile-paths: ${{ inputs.lockfile-paths }}
