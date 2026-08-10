@@ -105,7 +105,8 @@ runs:
       uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.0.0
       with:
         # Fallback when packageManager is missing (common for plugin subdir consumers).
-        version: 9
+        # Prefer a current major — older CLIs choke on newer lockfile/audit JSON shapes.
+        version: 11
 
     # Skip dependency caching when install=none: setup-node's post step fails with
     # "Path(s) specified in the action for caching do(es) not exist" because no
