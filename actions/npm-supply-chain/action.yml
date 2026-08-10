@@ -74,8 +74,16 @@ runs:
         printf '%s\n' "${LOCKFILE_PATHS}" > "${patterns}"
         bash "${ACTION_PATH}/scripts/resolve-lockfiles.sh" "." "${patterns}" | tee "${lockfiles}"
         pm="$(bash "${ACTION_PATH}/scripts/detect-package-manager.sh" "${PACKAGE_MANAGER_IN}" "${lockfiles}")"
+        needs_pnpm=0
+        while IFS= read -r path || [[ -n "${path}" ]]; do
+          [[ -z "${path}" ]] && continue
+          [[ "$(basename "${path}")" == "pnpm-lock.yaml" ]] && needs_pnpm=1
+        done < "${lockfiles}"
+        # Install mode needs pnpm even if auto resolved to npm (shouldn't happen with only pnpm locks).
+        [[ "${pm}" == "pnpm" ]] && needs_pnpm=1
         {
           echo "package-manager=${pm}"
+          echo "needs-pnpm=${needs_pnpm}"
           echo "lockfiles<<EOF"
           cat "${lockfiles}"
           echo "EOF"
@@ -83,16 +91,21 @@ runs:
           cat "${lockfiles}"
           echo "EOF"
         } >> "${GITHUB_OUTPUT}"
-        echo "Resolved package manager: ${pm}"
+        echo "Resolved package manager: ${pm} (needs-pnpm=${needs_pnpm})"
 
-    # Scan-only (install=none) does not need pnpm installed. pnpm/action-setup
-    # fails with "No pnpm version is specified" when package.json lacks
-    # "packageManager" — common for lockfile-only / monorepo subdirectory consumers.
-    - name: Setup pnpm
-      if: steps.resolve.outputs.package-manager == 'pnpm' && inputs.install != 'none'
+    # audit-ci --package-manager pnpm needs the pnpm binary even when install=none.
+    # Split setup: install mode lets package.json "packageManager" win; scan-only pins a CLI.
+    - name: Setup pnpm (install mode)
+      if: steps.resolve.outputs.needs-pnpm == '1' && inputs.install != 'none'
       uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.0.0
-      # Do not pass `version` — let package.json "packageManager" win. A hardcoded
-      # version (e.g. 9) conflicts with consumers on pnpm 10+ and fails the setup.
+      # Do not pass `version` — let package.json "packageManager" win.
+
+    - name: Setup pnpm (scan-only audit CLI)
+      if: steps.resolve.outputs.needs-pnpm == '1' && inputs.install == 'none'
+      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.0.0
+      with:
+        # Fallback when packageManager is missing (common for plugin subdir consumers).
+        version: 9
 
     # Skip dependency caching when install=none: setup-node's post step fails with
     # "Path(s) specified in the action for caching do(es) not exist" because no
@@ -198,7 +211,6 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         FAIL_ON: ${{ inputs.fail-on }}
-        PM: ${{ steps.resolve.outputs.package-manager }}
         LOCKFILES: ${{ steps.resolve.outputs.lockfiles }}
       run: |
         set -euo pipefail
@@ -217,11 +229,17 @@ runs:
         while IFS= read -r lf || [[ -n "${lf}" ]]; do
           [[ -z "${lf}" ]] && continue
           dir="$(dirname "${lf}")"
-          echo "::group::audit-ci (${PM}) in ${dir} for ${lf}"
+          # Per-lockfile PM: mixed npm+pnpm monorepos must not force one tool on every tree.
+          case "$(basename "${lf}")" in
+            pnpm-lock.yaml) lf_pm=pnpm ;;
+            yarn.lock) lf_pm=yarn ;;
+            *) lf_pm=npm ;;
+          esac
+          echo "::group::audit-ci (${lf_pm}) in ${dir} for ${lf}"
           set +e
           (
             cd "${dir}"
-            case "${PM}" in
+            case "${lf_pm}" in
               pnpm)
                 npx --yes audit-ci@"^7" --package-manager pnpm --severity-threshold "${threshold}"
                 ;;
@@ -237,10 +255,10 @@ runs:
           set -e
           echo "::endgroup::"
           if [[ "${rc}" -ne 0 ]]; then
-            echo "- \`${lf}\`: FAIL" >> "${GITHUB_STEP_SUMMARY}"
+            echo "- \`${lf}\`: FAIL (${lf_pm})" >> "${GITHUB_STEP_SUMMARY}"
             failed=1
           else
-            echo "- \`${lf}\`: PASS" >> "${GITHUB_STEP_SUMMARY}"
+            echo "- \`${lf}\`: PASS (${lf_pm})" >> "${GITHUB_STEP_SUMMARY}"
           fi
         done <<< "${LOCKFILES}"
 
