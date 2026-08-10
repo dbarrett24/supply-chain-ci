@@ -71,10 +71,10 @@ jobs:
       # External callers: invoke the composite action remotely. Do NOT nest-checkout this
       # repo via github.workflow_sha / job.workflow_sha — under workflow_call those resolve
       # to the *caller* SHA and fail with "not our ref". Keep the action pin on the same
-      # release tag as this workflow (v0.1.1).
+      # release tag as this workflow (v0.1.4).
       - name: Run supply-chain scans
         if: github.repository != 'dbarrett24/supply-chain-ci'
-        uses: dbarrett24/supply-chain-ci/actions/npm-supply-chain@v0.1.3
+        uses: dbarrett24/supply-chain-ci/actions/npm-supply-chain@65551cdc73cc788627246037abe1d81f58d26343 # v0.1.4
         with:
           package-manager: ${{ inputs.package-manager }}
           lockfile-paths: ${{ inputs.lockfile-paths }}

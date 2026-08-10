@@ -116,7 +116,7 @@ Permissions: `contents: read` only.
 | `lockfile-paths` | common lockfile globs | Multiline globs |
 | `node-version` | `22` | Passed to `actions/setup-node` |
 | `fail-on` | `high` | `high` \| `critical` \| `malware` — see [concepts](./docs/concepts.md) |
-| `install` | `ci-ignore-scripts` | `none` \| `ci-ignore-scripts` \| `ci` |
+| `install` | `ci-ignore-scripts` | `none` \| `ci-ignore-scripts` \| `ci`. `none` still installs the **pnpm CLI** when a `pnpm-lock.yaml` is scanned (needed by `audit-ci`); it does not install project dependencies. |
 | `enable-harden-runner` | `true` | step-security Harden-Runner audit mode |
 | `enable-campaign-ioc` | `true` | Curated IOC scan |
 | `working-directory` | `.` | Monorepo subdirectory |
